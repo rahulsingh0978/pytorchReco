@@ -1,0 +1,11 @@
+
+.idea/misc.xml
+.idea/modules.xml
+.idea/pytorchReco.iml
+.idea/vcs.xml
+.idea/workspace.xml
+.idea/inspectionProfiles/Project_Default.xml
+__pycache__/utils.cpython-36.pyc
+__pycache__/torchmf.cpython-36.pyc
+__pycache__/metrics.cpython-36.pyc
+__pycache__/config.cpython-36.pyc
