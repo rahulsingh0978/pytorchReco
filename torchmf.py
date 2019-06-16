@@ -10,7 +10,6 @@ from torch import nn
 import torch.multiprocessing as mp
 import torch.utils.data as data
 from tqdm import tqdm
-from models import *
 
 import metrics
 
@@ -104,12 +103,143 @@ class PairwiseInteractions(data.Dataset):
         return self.mat_csr.indices[start:end]
 
 
+class MatrixFactorization(torch.nn.Module):
+    def __init__(self, n_users, n_items, n_factors=40):
+        super().__init__()
+        # create user embeddings
+        self.user_factors = torch.nn.Embedding(n_users, n_factors,
+                                               sparse=False)
+        # create item embeddings
+        self.item_factors = torch.nn.Embedding(n_items, n_factors,
+                                               sparse=False)
 
+    def forward(self, user, item):
+        # matrix multiplication
+        return (self.user_factors(user) * self.item_factors(item)).sum(1)
+
+    def predict(self, user, item):
+        return self.forward(user, item)
+
+
+class BaseModule(nn.Module):
+    """
+    Base module for explicit matrix factorization.
+    """
+
+    def __init__(self,
+                 n_users,
+                 n_items,
+                 n_factors=40,
+                 dropout_p=0,
+                 sparse=False):
+        """
+
+        Parameters
+        ----------
+        n_users : int
+            Number of users
+        n_items : int
+            Number of items
+        n_factors : int
+            Number of latent factors (or embeddings or whatever you want to
+            call it).
+        dropout_p : float
+            p in nn.Dropout module. Probability of dropout.
+        sparse : bool
+            Whether or not to treat embeddings as sparse. NOTE: cannot use
+            weight decay on the optimizer if sparse=True. Also, can only use
+            Adagrad.
+        """
+        super(BaseModule, self).__init__()
+        self.n_users = n_users
+        self.n_items = n_items
+        self.n_factors = n_factors
+        self.user_biases = nn.Embedding(n_users, 1, sparse=sparse)
+        self.item_biases = nn.Embedding(n_items, 1, sparse=sparse)
+        self.user_embeddings = nn.Embedding(n_users, n_factors, sparse=sparse)
+        self.item_embeddings = nn.Embedding(n_items, n_factors, sparse=sparse)
+
+        self.dropout_p = dropout_p
+        self.dropout = nn.Dropout(p=self.dropout_p)
+
+        self.sparse = sparse
+
+    def forward(self, users, items):
+        """
+        Forward pass through the model. For a single user and item, this
+        looks like:
+
+        user_bias + item_bias + user_embeddings.dot(item_embeddings)
+
+        Parameters
+        ----------
+        users : np.ndarray
+            Array of user indices
+        items : np.ndarray
+            Array of item indices
+
+        Returns
+        -------
+        preds : np.ndarray
+            Predicted ratings.
+
+        """
+        ues = self.user_embeddings(users)
+        uis = self.item_embeddings(items)
+
+        preds = self.user_biases(users)
+        preds += self.item_biases(items)
+        preds += (self.dropout(ues) * self.dropout(uis)).sum(1).view(preds.shape[0], preds.shape[1])
+
+        return preds
+
+    def __call__(self, *args):
+        return self.forward(*args)
+
+    def predict(self, users, items):
+        return self.forward(users, items)
 
 
 def bpr_loss(preds, vals):
     sig = nn.Sigmoid()
     return (1.0 - sig(preds)).pow(2).sum()
+
+
+class BPRModule(nn.Module):
+
+    def __init__(self,
+                 n_users,
+                 n_items,
+                 n_factors=40,
+                 dropout_p=0,
+                 sparse=False,
+                 model=BaseModule):
+        super(BPRModule, self).__init__()
+
+        self.n_users = n_users
+        self.n_items = n_items
+        self.n_factors = n_factors
+        self.dropout_p = dropout_p
+        self.sparse = sparse
+        self.pred_model = model(
+            self.n_users,
+            self.n_items,
+            n_factors=n_factors,
+            dropout_p=dropout_p,
+            sparse=sparse
+        )
+
+    def forward(self, users, items):
+        assert isinstance(items, tuple), \
+            'Must pass in items as (pos_items, neg_items)'
+        # Unpack
+        (pos_items, neg_items) = items
+        pos_preds = self.pred_model(users, pos_items)
+        neg_preds = self.pred_model(users, neg_items)
+        return pos_preds - neg_preds
+
+    def predict(self, users, items):
+        return self.pred_model(users, items)
 
 
 class BasePipeline:
@@ -118,12 +248,11 @@ class BasePipeline:
     and optimizer. Handles training for multiple epochs and keeping track of
     train and test loss.
     """
-    print("in base func")
 
     def __init__(self,
                  train,
                  test=None,
-                 model=BaseModule,
+                 model=MatrixFactorization,
                  n_factors=40,
                  batch_size=32,
                  dropout_p=0.02,
@@ -131,8 +260,7 @@ class BasePipeline:
                  lr=0.01,
                  weight_decay=0.,
                  optimizer=torch.optim.Adam,
-                 # loss_function=nn.MSELoss(size_average=False),
-                 loss_function=nn.MSELoss(reduction='sum'),
+                 loss_function=nn.MSELoss(size_average=False),
                  n_epochs=10,
                  verbose=False,
                  random_seed=None,
@@ -170,8 +298,9 @@ class BasePipeline:
         self.model = model(self.n_users,
                            self.n_items,
                            n_factors=self.n_factors,
-                           dropout_p=self.dropout_p,
-                           sparse=sparse)
+                           # dropout_p=self.dropout_p,
+                           # sparse=sparse
+                           )
         self.optimizer = optimizer(self.model.parameters(),
                                    lr=self.lr,
                                    weight_decay=self.weight_decay)
@@ -269,9 +398,10 @@ class BasePipeline:
             loss.backward()
 
             self.optimizer.step()
-            total_loss += loss.item()
-            batch_loss = loss.item() / row.size()[0]
-            pbar.set_postfix(train_loss=batch_loss)
+
+            # total_loss += loss.data[0]
+            # batch_loss = loss.data[0] / row.size()[0]
+            # pbar.set_postfix(train_loss=batch_loss)
         total_loss /= self.train.nnz
         if queue is not None:
             queue.put(total_loss[0])
@@ -291,7 +421,7 @@ class BasePipeline:
 
             preds = self.model(row, col)
             loss = self.loss_function(preds, val)
-            total_loss += loss.item()
+            # total_loss += loss.data[0]
 
-        total_loss /= self.test.nnz
+        # total_loss /= self.test.nnz
         return total_loss[0]

@@ -20,6 +20,7 @@ def train_test_split(interactions, n=10):
     interactions : np.ndarray
     n : int (default=10)
         Number of items to select / row to place into test.
+
     Returns
     -------
     train : np.ndarray
@@ -36,7 +37,7 @@ def train_test_split(interactions, n=10):
             test[user, test_interactions] = interactions[user, test_interactions]
 
     # Test and training are truly disjoint
-    assert (np.all((train * test) == 0))
+    assert(np.all((train * test) == 0))
     return train, test
 
 
@@ -45,7 +46,7 @@ def _get_data_path():
     Get path to the movielens dataset file.
     """
     data_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                             'data')
+                        'data')
     if not os.path.exists(data_path):
         print('Making data path')
         os.mkdir(data_path)
@@ -70,7 +71,7 @@ def _download_movielens(dest_path):
         z.extractall(dest_path)
 
 
-def read_data_from_file():
+def read_movielens_df():
     path = _get_data_path()
     zipfile = os.path.join(path, 'ml-100k.zip')
     if not os.path.isfile(zipfile):
@@ -81,40 +82,23 @@ def read_data_from_file():
     return df
 
 
-def getNumberOfUniqueUsersAndItems():
-    df = read_data_from_file()
-    user = df.user_id.unique()
-    item = df.item_id.unique()
-    return user, item
-
-
 def get_movielens_interactions():
-    df = read_data_from_file()
+    df = read_movielens_df()
 
     n_users = df.user_id.unique().shape[0]
     n_items = df.item_id.unique().shape[0]
-    print("unique users : ", n_users)
-    print("unique items : ", n_items)
 
     interactions = np.zeros((n_users, n_items))
     for row in df.itertuples():
         interactions[row[1] - 1, row[2] - 1] = row[3]
-    print("main matrix data", interactions.shape)
     return interactions
 
 
 def get_movielens_train_test_split(implicit=False):
     interactions = get_movielens_interactions()
-
-
     if implicit:
         interactions = (interactions >= 4).astype(np.float32)
-    print("Input Matrix Before splitting into test and train Users are the rows , movies are the col")
-    print("Input Matrix data: (row : 1) upto 50 values", interactions[0, 0:50])
-    print("Input Matrix data: (row : 900) upto 50 values", interactions[900, 0:50])
     train, test = train_test_split(interactions)
     train = sp.coo_matrix(train)
-    print("train data: ", train)
     test = sp.coo_matrix(test)
-    print("test data: ", test)
     return train, test
