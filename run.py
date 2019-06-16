@@ -77,7 +77,10 @@ def testModel(config):
     pipeline.optimizer.load_state_dict(load_res["optimizer"])
     pipeline.model.eval()
 
-    result = pipeline.model.predict(torch.Tensor([1]).long(), torch.Tensor([1]).long())
+    testUsers=[1,2]
+    testMovie=[1]
+
+    result = pipeline.model.predict(torch.Tensor(testusers).long(), torch.Tensor(testMovie).long())
     print("predtict", result.data.numpy())
 
 
