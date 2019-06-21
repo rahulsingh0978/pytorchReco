@@ -13,7 +13,7 @@ def explicit():
     pipeline = BasePipeline(train, test=test, model=BaseModule,
                             n_factors=10, batch_size=1024, dropout_p=0.02,
                             lr=0.02, weight_decay=0.1,
-                            optimizer=torch.optim.Adam, n_epochs=40,
+                            optimizer=torch.optim.Adam, n_epochs=4,
                             verbose=True, random_seed=2017)
     pipeline.fit()
 
@@ -25,7 +25,7 @@ def implicit():
                            batch_size=1024, num_workers=4,
                            n_factors=20, weight_decay=0,
                            dropout_p=0., lr=.2, sparse=True,
-                           optimizer=torch.optim.SGD, n_epochs=40,
+                           optimizer=torch.optim.SGD, n_epochs=4,
                            random_seed=2017, loss_function=bpr_loss,
                            model=BPRModule,
                            interaction_class=PairwiseInteractions,
@@ -33,9 +33,9 @@ def implicit():
     pipeline.fit()
     pipeline.model.eval()
     testusers = [1]
-    testMovie = [5]
+    testMovie = [1]
 
-    result = pipeline.model(torch.Tensor(testusers).long(), torch.Tensor(testMovie).long())
+    result = pipeline.model.predict(torch.Tensor(testusers).long(), torch.Tensor(testMovie).long())
     print("predtict", result.data.numpy())
 
 
@@ -46,12 +46,18 @@ def hogwild():
                             batch_size=1024, num_workers=4,
                             n_factors=20, weight_decay=0,
                             dropout_p=0., lr=.2, sparse=True,
-                            optimizer=torch.optim.SGD, n_epochs=40,
+                            optimizer=torch.optim.SGD, n_epochs=4,
                             random_seed=2017, loss_function=bpr_loss,
                             model=BPRModule, hogwild=True,
                             interaction_class=PairwiseInteractions,
                             eval_metrics=('auc', 'patk'))
     pipeline.fit()
+    pipeline.model.eval()
+    testusers = [1]
+    testMovie = [1]
+
+    result = pipeline.model.predict(torch.Tensor(testusers).long(), torch.Tensor(testMovie).long())
+    print("predtict", result.data.numpy())
 
 
 if __name__ == '__main__':
@@ -66,6 +72,6 @@ if __name__ == '__main__':
     elif args.example == 'hogwild':
         hogwild()
     else:
-        implicit()
+        hogwild()
 
 
